@@ -7,22 +7,22 @@
 #include <AsyncMqttClient.h> // https://github.com/marvinroger/async-mqtt-client
 
 // ---- Config ---
-#define MQTT_HOST      IPAddress(10, 10, 1, 100)
+#define MQTT_HOST      IPAddress(10, 10, 1, 5)
 #define MQTT_PORT      1883
 #define MQTT_CLIENTID  "scales"
 #define WIFI_SSID      "ssid"
 #define WIFI_PASSWORD  "pass"
-#define MQTT_USER      "user"
+#define MQTT_USER      "mqttuser"
 #define MQTT_PASS      "pass"
 #define TouchThreshold 36
 #define HX711DATA 22
 #define HX711CLOCK 21
-#define Person1MQTT "devices/scales/person1/weight"
-#define Person2MQTT "devices/scales/person2/weight"
+#define PERSON1 "person1 name"
+#define PERSON2 "person2 name"
 #define Person1Min 50000
-#define Person1Max 60000
+#define Person1Max 55000
 #define Person2Min 75000
-#define Person2Max 85000
+#define Person2Max 80000
 const float calibrationValue = -20.0;
 // ---- end Config ---
 
@@ -63,20 +63,24 @@ void setup() {
   WiFi.onEvent(WiFiEvent);
   WiFi.setHostname("scales");
   mqttClient.onConnect(onMqttConnect);
+  mqttClient.onPublish(onMqttPublish);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setClientId(MQTT_CLIENTID);
   mqttClient.setCredentials(MQTT_USER, MQTT_PASS);
-  mqttClient.onPublish(onMqttPublish);
-
+  
   connectToWifi();
   scales();
+  delay (2000); // give MQTT a little time to complete, will sleep before timer expires anyway.
 }
 // --- end Setup ---
 
 
 void loop() {
-  //  touchpadDiag();
-  //  should not be here, try to sleep
+//  touchpadDiag();
+//  should not be here, try to sleep
+  Serial.println ("[warn      ] main loop hit.");
+  goToSleep();
+  delay (100);
   esp_deep_sleep_start();
   delay (5000);
 }
@@ -197,17 +201,25 @@ void postResults() {
   showMeasurement();
   char weightString[5];
   String units;
+  bool postData = false;
 
-  if (grams > Person1Min  && grams < Person1Max) {  // post in kilo's
+  if (grams > Person1Min && grams < Person1Max) {  // post in kilo's
     dtostrf(grams / 1000, 3, 1, weightString);
-    mqttClient.publish(Person1MQTT, 1, true, weightString);
+    mqttClient.publish("devices/"MQTT_CLIENTID"/weight/"PERSON1, 1, true, weightString);
+    postData = true;
   }
-  if (grams > Person2Min  && grams < Person2Max) { // post in pounds
+  if (grams > Person2Min && grams < Person2Max) { // post in pounds
     dtostrf(grams * 0.00220462262185, 3, 0, weightString);
-    mqttClient.publish(Person2MQTT, 1, true, weightString);
+    mqttClient.publish("devices/"MQTT_CLIENTID"/weight/"PERSON2, 1, true, weightString);
+    postData = true;
   }
 
-  Serial.print ("[info      ] publish data to MQTT (if applicable)");
+  if (postData) {
+    Serial.println ("[info      ] publish data to MQTT");
+  } else {
+    Serial.println ("[info      ] data not published data to MQTT");
+    goToSleep();
+  }
 }
 
 
@@ -226,7 +238,7 @@ void goToSleep() {
     }
     while (display.nextPage());
   }
-  
+  Serial.println ("[info      ] Sleep.");
   LoadCell.powerDown();
   delay (50);
   esp_deep_sleep_start();
@@ -269,7 +281,7 @@ void onMqttConnect(bool sessionPresent) {
 }
 
 void onMqttPublish(uint16_t packetId) {
-  Serial.print("[MQTT      ] Publish acknowledged.     ");
+  Serial.println("[MQTT      ] Publish acknowledged.");
   goToSleep();
 }
 // --- end MQTT ---
